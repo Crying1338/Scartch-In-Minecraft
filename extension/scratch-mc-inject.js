@@ -233,7 +233,16 @@
           req.open(method, url, true);
           Object.keys(headers).forEach((k) => req.setRequestHeader(k, headers[k]));
         } catch (e) {
-          reject(new Error('连不上注入端：' + e.message));
+          // 这里把 fetch 的原始失败原因也带上，否则只剩 "XMLHttpRequest is not a constructor"
+          reject(
+            new Error(
+              '连不上注入端（fetch: ' +
+                (fetchError && fetchError.message ? fetchError.message : '?') +
+                ' / xhr: ' +
+                e.message +
+                '）'
+            )
+          );
           return;
         }
         req.onload = () =>
