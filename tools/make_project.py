@@ -125,16 +125,16 @@ def ref(block_id):
 
 def ref_menu(block_id, fallback):
     """acceptReporters 菜单接一个 reporter 时，第三段放菜单默认值当 shadow。"""
-    return [3, block_id, [11, fallback, None]]
+    return [3, block_id, [11, fallback]]
 
 
 def menu(value):
-    return [1, [11, str(value), None]]
+    return [1, [11, str(value)]]
 
 
 def var_menu(name, vid, fallback):
     """把变量接到 acceptReporters 菜单上：第三段放菜单默认值当 shadow。"""
-    return [3, [12, name, vid], [11, fallback, None]]
+    return [3, [12, name, vid], [11, fallback]]
 
 
 def cond(block_id):

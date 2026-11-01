@@ -255,6 +255,49 @@ agent 会把日志写一份到 `%TEMP%\mcsi-agent.log`（游戏控制台常被�
 
 只看到 `/status` 没有 `/extension.js`，说明 TurboWarp 根本没走到取扩展那一步。
 
+## 不装编辑器也能跑：`tools/vmrun.js`
+
+用 scratch-vm（就是 Scratch 3 自己的运行时）headless 跑这个 sb3，不需要 TurboWarp、不需要浏览器：
+
+```powershell
+cd tools\vmrun                                         # 一次
+"C:\Program Files\nodejs\npm.cmd" install scratch-vm
+cd ..\..
+node tools\vmrun.js ScratchMC.sb3 8                    # 跑 8 秒
+```
+
+实测输出（注入端在 8791 上跑着）：
+
+```
+extension registered: scratchMC
+extension URLs the project asked for: scratchMC
+project loaded: ScratchMC.sb3 16777 bytes
+targets: 注入端, 模块面板, 准星
+blocks in sprites: 154  ext blocks: 19
+green flag -> running for 8s ...
+
+--- stage variables ---
+  var  序号 = 4
+  var  连接地址 = "http://127.0.0.1:8791"
+  list 模块 = ["aim","trigger","esp"]
+  list 开关 = ["1","1","1"]
+
+--- sprite variables ---
+  模块面板.我的模块 = "esp"
+  模块面板.我的开关 = "1"
+
+--- extension state ---
+  connected : true
+  connect   : 已连接 http://127.0.0.1:8791（pid 7040，玩家 Steve）
+```
+
+`connect` 那行是扩展真的发 HTTP 拿回来的 —— 也就是说工程里的积木确实在执行，而不是摆设。
+
+顺带它揪出一个真 bug：`control_create_clone_of` 的 `CLONE_OPTION` 里菜单 primitive 写成了
+`[11, "_myself_", null]`，而 sb3 schema 只允许两段。scratch-vm 会因此拒绝整个工程
+（`Could not parse as a valid SB2 or SB3 project`），TurboWarp 则只报成扩展加载失败。
+现在已改成 `[11, "_myself_"]`，`tools/check_project.py` 也加了这条校验。
+
 ## 已知限制
 
 * 注入需要和目标进程同权限：游戏用管理员启动，注入器也要管理员。

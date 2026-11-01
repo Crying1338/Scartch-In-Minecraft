@@ -93,6 +93,26 @@ def check_block_graph(target_name, blocks):
                 bad("%s/%s: field %s 格式不对" % (target_name, bid, name))
 
 
+def check_primitives(project):
+    """菜单 primitive 只能两段：[11, "值"]。
+
+    写成 [11, "_myself_", null] 时，scratch-vm 的 sb3 schema 会直接拒掉整个工程
+    （Could not parse as a valid SB2 or SB3 project），而 TurboWarp 只会把它报成
+    扩展加载失败，极难排查。
+    """
+    for t in project["targets"]:
+        for bid, node in t["blocks"].items():
+            for name, value in node.get("inputs", {}).items():
+                if not isinstance(value, list) or len(value) < 2:
+                    continue
+                inner = value[1]
+                if isinstance(inner, list) and len(inner) >= 1 and inner[0] == 11 and len(inner) != 2:
+                    bad("%s/%s: 输入 %s 的菜单 primitive 段数不对（%d 段，应为 2）：%r"
+                        % (t["name"], bid, name, len(inner), inner))
+                if isinstance(inner, list) and len(inner) >= 1 and inner[0] == 12 and len(inner) != 3:
+                    bad("%s/%s: 输入 %s 的变量 primitive 段数不对：%r" % (t["name"], bid, name, inner))
+
+
 def check_vars(project):
     stage = next(t for t in project["targets"] if t["isStage"])
     var_ids = set(stage["variables"]) | set(stage["lists"])
@@ -158,6 +178,7 @@ def main():
 
     for t in project["targets"]:
         check_block_graph(t["name"], t["blocks"])
+    check_primitives(project)
     check_vars(project)
     check_monitors(project)
 
