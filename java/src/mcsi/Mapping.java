@@ -378,11 +378,15 @@ public final class Mapping {
 
     /** 把 Runnable 丢到游戏主线程（找不到 execute 就返回 false）。 */
     public boolean submit(Runnable task) {
-        if (mExecute == null) {
+        if (mExecute == null || task == null) {
             return false;
         }
         Object m = mc();
-        return m != null && call(mExecute, m, task) != null;
+        if (m == null) {
+            return false;
+        }
+        // execute(Runnable) 返回 void，invoke 成功也是 null，不能用返回值判断
+        return invokeOk(mExecute, m, task);
     }
 
     public double eyeOffset(Object entity) {

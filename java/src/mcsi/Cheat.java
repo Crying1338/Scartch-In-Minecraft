@@ -154,11 +154,14 @@ public final class Cheat {
         if (triggerOn && best != null && !"off".equalsIgnoreCase(triggerMode)) {
             boolean onCrosshair = Math.abs(best.dyaw) <= triggerBox && Math.abs(best.dpitch) <= triggerBox;
             if (onCrosshair && now - lastAttackAt >= triggerCooldown) {
-                boolean ok = mc.attack(best);
+                final Mc.Ent target = best;
+                onGameThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mc.attack(target);
+                    }
+                });
                 lastAttackAt = now;
-                if (!ok) {
-                    lastNote = "attack 调用不通：这个版本要走输入层触发";
-                }
             }
         }
     }
@@ -191,11 +194,22 @@ public final class Cheat {
             nextPitch = quantize(nextPitch, sensStep);
         }
 
-        boolean ok = mc.setRot((float) nextYaw, (float) clampPitch(nextPitch));
+        final float outYaw = (float) nextYaw;
+        final float outPitch = (float) clampPitch(nextPitch);
+        onGameThread(new Runnable() {
+            @Override
+            public void run() {
+                mc.setRot(outYaw, outPitch);
+            }
+        });
         lastStepDeg = Math.hypot(applyYaw, applyPitch);
-        if (ok) {
-            lastAimAt = now;
-            lastNote = "";
+        lastAimAt = now;
+    }
+
+    /** 视角/攻击这类会碰游戏状态的操作尽量排到主线程；没有 execute 就原地执行。 */
+    private void onGameThread(Runnable task) {
+        if (!mc.map.submit(task)) {
+            task.run();
         }
     }
 

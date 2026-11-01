@@ -298,6 +298,35 @@ green flag -> running for 8s ...
 （`Could not parse as a valid SB2 or SB3 project`），TurboWarp 则只报成扩展加载失败。
 现在已改成 `[11, "_myself_"]`，`tools/check_project.py` 也加了这条校验。
 
+### 交互回归：`tests/vm.ps1`
+
+假 Minecraft JVM + 编译出来的 agent + scratch-vm 跑 sb3，一条命令验证整条链：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tests\vm.ps1
+```
+
+```
+[PASS] sb3 通过 scratch-vm 的反序列化校验  (ScratchMC.sb3 16777B)
+[PASS] 三个角色都在  (注入端, 模块面板, 准星)
+[PASS] 模块列表已初始化  (["aim","trigger","esp"])
+[PASS] 模块面板克隆出 3 个方块  (clones=3)
+[PASS] 克隆体各拿到一个模块名  (aim,esp,trigger)
+[PASS] connect 到注入端  (已连接 http://127.0.0.1:8791（pid 32924，玩家 Steve）)
+[PASS] 自瞄把视角转过去了  (45/12.5 -> -31.8274/0)
+[PASS] 锁定到目标  (Zombie2)
+[PASS] attack 走通  (已攻击 Zombie2)
+=== 全部通过 ===
+```
+
+`45/12.5 -> -31.8274/0` 这行是重点：假世界里玩家初始朝 45°，僵尸在 +Z 偏右，
+自瞄把它掰到了 -31.8° —— 这是编译出来的 agent 真的调了 `setYRot`，不是桩里编的数字。
+
+### 视角和攻击走游戏主线程
+
+`Minecraft#execute(Runnable)` 能拿到就排队到主线程执行，拿不到才原地跑。
+`MultiPlayerGameMode#attack` 从脉冲线程直呼容易撞上游戏侧的并发断言，排到主线程更稳。
+
 ## 已知限制
 
 * 注入需要和目标进程同权限：游戏用管理员启动，注入器也要管理员。
