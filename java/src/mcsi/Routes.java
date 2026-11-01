@@ -192,6 +192,12 @@ public final class Routes implements HttpBridge.Handler {
             }
         }
         if (data == null) {
+            if (type.indexOf("javascript") >= 0) {
+                // TurboWarp 会把响应体当 JS 执行，返回 JSON 只会得到 "Error in sandboxed script"。
+                return HttpBridge.Reply.text("console.error('[ScratchMC] jar 里没有 " + resource + "');\n"
+                        + "throw new Error('ScratchMC: 注入端 jar 里没有 " + resource
+                        + " —— 重新执行 build.ps1，重启游戏后重新注入');\n", "application/javascript");
+            }
             return HttpBridge.Reply.error(404, "jar 里没有 " + resource + "（打包时把扩展/工程一起塞进 jar）");
         }
         return HttpBridge.Reply.bytes(data, type);

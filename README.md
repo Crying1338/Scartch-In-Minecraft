@@ -167,6 +167,36 @@ python tools\make_project.py     # 重新生成 sb3
 python tools\check_project.py    # 校验积木图 / opcode / 造型 md5 / 监视器
 ```
 
+## 报错排查
+
+### `Error in sandboxed script: http://127.0.0.1:8791/extension.js`
+
+TurboWarp 桌面版把这条错误吐出来时，意思只有一句：那个 URL 的脚本没跑通。三个成因，按顺序排：
+
+1. **扩展被塞进 sandbox iframe** —— 桌面版默认把 URL 扩展放进 sandbox，那里
+   `fetch http://127.0.0.1` 会被 CSP / 本地网络访问策略拦掉（iframe origin 是 null）。
+   现在扩展在 `getInfo()` 里声明了 `unsandboxed: true`，用最新的
+   `extension/scratch-mc-inject.js`。
+2. **URL 返回的不是 JS** —— 注入端是旧 jar 时 `/extension.js` 会 404，返回的是 JSON；
+   TurboWarp 把 JSON 当脚本执行，报的还是这句话。现在 404 会返回一段会 `throw` 的 JS，
+   控制台能直接看到原因。自检：浏览器打开 `http://127.0.0.1:8791/extension.js`，
+   必须看到 JS 源码。
+3. **`this.lastError` 和积木方法 `lastError()` 同名** —— 字段覆盖了原型方法，
+   TurboWarp 校验 opcode 时拿到的是字符串，注册就会失败。已改名为 `lastErr`。
+
+不想重启游戏、也不想重新注入时：TurboWarp → 扩展 → **Load from file** →
+选 `extension/scratch-mc-inject.js`。扩展只是 HTTP 客户端，连正在跑的旧注入端也照样工作。
+
+离线先把扩展验一遍（不需要 Scratch / TurboWarp / 游戏）：
+
+```powershell
+node tools\check-extension.js
+```
+
+它会用假 Scratch 桩加载扩展、检查 `getInfo()` 能否 `structuredClone`（sandbox 就是走
+postMessage 回传，不可克隆就会变成上面那句报错）、检查每个 opcode 都有实现，
+再起一个假注入端把 connect / 读状态 / 开关模块 / 改参数全跑一遍。
+
 ## 已知限制
 
 * 注入需要和目标进程同权限：游戏用管理员启动，注入器也要管理员。

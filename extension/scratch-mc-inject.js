@@ -22,7 +22,7 @@
       this.base = DEFAULT_BASE;
       this.token = '';
       this.connected = false;
-      this.lastError = '';
+      this.lastErr = '';
       this.connectNote = '';
       this.stateCache = { at: 0, data: null };
       this.entityCache = { at: 0, list: [], count: 0 };
@@ -32,6 +32,9 @@
       return {
         id: 'scratchMC',
         name: 'ScratchMC 注入端',
+        // TurboWarp 桌面版默认把扩展放进 sandbox iframe，那里 fetch http://127.0.0.1
+        // 会被 CSP / 本地网络访问策略拦掉（表现为 "Error in sandboxed script"）。
+        unsandboxed: true,
         color1: '#2f6f4f',
         color2: '#245a40',
         color3: '#1a4530',
@@ -181,34 +184,73 @@
     }
 
     async request(path, body) {
+      const reply = await this.raw(path, body);
+      let data = {};
+      try {
+        data = reply.text ? JSON.parse(reply.text) : {};
+      } catch (e) {
+        data = { ok: false, error: '注入端返回了非 JSON：' + String(reply.text).slice(0, 80) };
+      }
+      if (!reply.ok || data.ok === false) {
+        this.connected = false;
+        this.lastErr = data.error || 'HTTP ' + reply.status;
+        throw new Error(this.lastErr);
+      }
+      this.connected = true;
+      this.lastErr = '';
+      return data;
+    }
+
+    /** fetch 优先；被策略拦时退回 XHR（桌面版两种都试过再报错）。 */
+    async raw(path, body) {
+      const url = this.base + path;
+      const payload = body === undefined ? undefined : JSON.stringify(body);
       const headers = {};
       if (this.token) {
         headers['X-MC-Token'] = this.token;
       }
-      if (body !== undefined) {
+      if (payload !== undefined) {
         headers['Content-Type'] = 'application/json';
       }
-      const res = await fetch(this.base + path, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: 'no-store',
-      });
-      const text = await res.text();
-      let data = {};
       try {
-        data = text ? JSON.parse(text) : {};
-      } catch (e) {
-        data = { ok: false, error: '注入端返回了非 JSON' };
+        const res = await fetch(url, {
+          method: payload === undefined ? 'GET' : 'POST',
+          headers,
+          body: payload,
+          cache: 'no-store',
+        });
+        return { ok: res.ok, status: res.status, text: await res.text() };
+      } catch (fetchError) {
+        return this.xhr(url, payload === undefined ? 'GET' : 'POST', payload, headers, fetchError);
       }
-      if (!res.ok || data.ok === false) {
-        this.connected = false;
-        this.lastError = data.error || 'HTTP ' + res.status;
-        throw new Error(this.lastError);
-      }
-      this.connected = true;
-      this.lastError = '';
-      return data;
+    }
+
+    xhr(url, method, payload, headers, fetchError) {
+      return new Promise((resolve, reject) => {
+        let req;
+        try {
+          req = new XMLHttpRequest();
+          req.open(method, url, true);
+          Object.keys(headers).forEach((k) => req.setRequestHeader(k, headers[k]));
+        } catch (e) {
+          reject(new Error('连不上注入端：' + e.message));
+          return;
+        }
+        req.onload = () =>
+          resolve({ ok: req.status >= 200 && req.status < 300, status: req.status, text: req.responseText });
+        req.onerror = () =>
+          reject(
+            new Error(
+              '连不上注入端（fetch 与 XHR 都失败）：' +
+                (fetchError && fetchError.message ? fetchError.message : 'network')
+            )
+          );
+        try {
+          req.send(payload === undefined ? null : payload);
+        } catch (e) {
+          reject(new Error('连不上注入端：' + e.message));
+        }
+      });
     }
 
     async status(force) {
@@ -235,7 +277,7 @@
       try {
         return fn();
       } catch (e) {
-        this.lastError = e && e.message ? e.message : String(e);
+        this.lastErr = e && e.message ? e.message : String(e);
         return fallback;
       }
     }
@@ -267,7 +309,7 @@
     }
 
     connectResult() {
-      return this.connectNote || this.lastError;
+      return this.connectNote || this.lastErr;
     }
 
     async refresh() {
@@ -430,7 +472,7 @@
     }
 
     lastError() {
-      return this.lastError;
+      return this.lastErr;
     }
 
     async shutdown() {
@@ -445,8 +487,8 @@
       try {
         return await fn();
       } catch (e) {
-        this.lastError = e && e.message ? e.message : String(e);
-        return '注入端错误：' + this.lastError;
+        this.lastErr = e && e.message ? e.message : String(e);
+        return '注入端错误：' + this.lastErr;
       }
     }
 
@@ -454,7 +496,7 @@
       try {
         return await fn();
       } catch (e) {
-        this.lastError = e && e.message ? e.message : String(e);
+        this.lastErr = e && e.message ? e.message : String(e);
         return fallback;
       }
     }
