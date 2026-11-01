@@ -88,6 +88,9 @@ public final class HttpBridge {
     private final String token;
     private volatile boolean running = true;
 
+    private final java.util.Map<String, Long> accessLog =
+            new java.util.concurrent.ConcurrentHashMap<String, Long>();
+
     private HttpBridge(ServerSocket server, String token, Handler handler) {
         this.server = server;
         this.token = token;
@@ -159,6 +162,7 @@ public final class HttpBridge {
             String[] parts = requestLine.split(" ");
             Req req = new Req();
             req.method = parts.length > 0 ? parts[0] : "GET";
+            logAccess(req.method, parts.length > 1 ? parts[1] : "/");
             String target = parts.length > 1 ? parts[1] : "/";
 
             int q = target.indexOf('?');
@@ -239,6 +243,23 @@ public final class HttpBridge {
                 // 忽略
             }
         }
+    }
+
+    /** 1 秒节流的访问日志：排查「TurboWarp 到底有没有来取扩展」用。 */
+    private void logAccess(String method, String target) {
+        int q = target.indexOf('?');
+        String path = q >= 0 ? target.substring(0, q) : target;
+        String key = method + " " + path;
+        long now = System.currentTimeMillis();
+        Long prev = accessLog.get(key);
+        if (prev != null && now - prev < 1000) {
+            return;
+        }
+        accessLog.put(key, now);
+        if (accessLog.size() > 200) {
+            accessLog.clear();
+        }
+        Log.info("→ " + key);
     }
 
     private boolean authorized(Req req) {

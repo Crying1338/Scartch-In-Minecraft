@@ -45,7 +45,7 @@ public final class Routes implements HttpBridge.Handler {
         }
 
         if (p.equals("/extension.js")) {
-            return staticFile("web/extension.js", extDiskPath, "application/javascript");
+            return staticFile("web/extension.js", extDiskPath, "application/javascript; charset=utf-8");
         }
         if (p.equals("/project/ScratchMC.sb3") || p.equals("/project/project.sb3")) {
             return staticFile("web/ScratchMC.sb3", sb3DiskPath, "application/octet-stream");

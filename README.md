@@ -197,6 +197,64 @@ node tools\check-extension.js
 postMessage 回传，不可克隆就会变成上面那句报错）、检查每个 opcode 都有实现，
 再起一个假注入端把 connect / 读状态 / 开关模块 / 改参数全跑一遍。
 
+### 先跑 doctor
+
+双击 `check.bat`（可带端口号，如 `check.bat 8793`），四步自检。正常长这样：
+
+```
+[1/4] /ping
+  OK  {"ok":true,"name":"ScratchMC","version":"1.0.0","pid":33152,...}
+[2/4] /extension.js  (TurboWarp must see JS here, not JSON)
+  type: application/javascript; charset=utf-8
+  len : 15098
+  head: /**
+[3/4] /status
+  player  : Steve
+  inGame  : True
+  canAim  : True
+  canAttack: True
+  entities: 4
+[4/4] mapping report
+  Minecraft 类 = net.minecraft.client.Minecraft（名字候选）
+  player 字段 = player（名字候选）
+```
+
+第 2 步的 `head` 必须是 `/**`。**看到 `{` 就说明注入端在返回 JSON，TurboWarp 必然报
+`Error in sandboxed script`** —— 那是旧 jar 或端口被别的程序占着。
+
+### 注入「看起来成功」但端口没起来
+
+目标 JVM 刚启动时，`loadAgent` 偶尔会返回成功但 `agentmain` 没真正执行。
+`McAttach` 现在注入完会自己打一次 `/ping`，不通就重试（最多 3 次），然后给结论：
+
+```
+注入完成，HTTP 已就绪。
+  状态: http://127.0.0.1:8791/status
+  扩展: http://127.0.0.1:8791/extension.js
+```
+
+看到这句才算真的成了。看不到就是没成，按它打印的三条（pid 是否还活着 / 权限是否对齐 /
+`-XX:+DisableAttachMechanism`）排查。
+
+### 还不行：用内联扩展的工程
+
+`ScratchMC-inline.sb3` 把扩展字节以 `data:application/javascript;base64,` 直接内联进
+`extensionURLs`。TurboWarp 不再需要向 127.0.0.1 取脚本，只剩扩展内部的 fetch，
+可以排除「取脚本」这一层的所有问题（CSP / 本地网络策略 / 端口没起来）。
+
+### 日志在哪
+
+agent 会把日志写一份到 `%TEMP%\mcsi-agent.log`（游戏控制台常被启动器藏起来）。
+里面有 1 秒节流的访问记录，能直接看出 TurboWarp 到底有没有来取扩展：
+
+```
+[mcsi 16:56:51.936] → GET /extension.js
+[mcsi 16:56:52.260] → GET /status
+[mcsi 16:56:52.627] → GET /mappings
+```
+
+只看到 `/status` 没有 `/extension.js`，说明 TurboWarp 根本没走到取扩展那一步。
+
 ## 已知限制
 
 * 注入需要和目标进程同权限：游戏用管理员启动，注入器也要管理员。

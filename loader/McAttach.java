@@ -74,24 +74,90 @@ public final class McAttach {
 
         String opts = "port=" + port + (token.isEmpty() ? "" : ";token=" + token);
         System.out.println("attach " + pid + "  agent=" + jarFile.getAbsolutePath() + "  args=" + opts);
+
+        // 目标 JVM 刚起来时，第一次 loadAgent 有时会「返回成功但 agentmain 没跑」。
+        // 所以注入完必须自己探一下端口，不通就重试。
+        int portNo = 8791;
         try {
-            VirtualMachine vm = VirtualMachine.attach(pid);
-            try {
-                vm.loadAgent(jarFile.getAbsolutePath(), opts);
-            } finally {
-                vm.detach();
+            for (String piece : opts.split(";")) {
+                if (piece.startsWith("port=")) {
+                    portNo = Integer.parseInt(piece.substring(5).trim());
+                }
             }
-        } catch (Throwable t) {
-            System.out.println("attach failed: " + t);
-            System.out.println("  - pid alive?      run --list again");
-            System.out.println("  - privilege?      game started as admin => run this as admin too");
-            System.out.println("  - attach blocked? -XX:+DisableAttachMechanism or hardened launcher");
+        } catch (Throwable ignored) {
+            portNo = 8791;
+        }
+
+        boolean ready = false;
+        for (int attempt = 1; attempt <= 3 && !ready; attempt++) {
+            try {
+                VirtualMachine vm = VirtualMachine.attach(pid);
+                try {
+                    vm.loadAgent(jarFile.getAbsolutePath(), opts);
+                } finally {
+                    vm.detach();
+                }
+            } catch (Throwable t) {
+                System.out.println("attach failed: " + t);
+                System.out.println("  - pid alive?      run --list again");
+                System.out.println("  - privilege?      game started as admin => run this as admin too");
+                System.out.println("  - attach blocked? -XX:+DisableAttachMechanism or hardened launcher");
+                return;
+            }
+            for (int i = 0; i < 20 && !ready; i++) {
+                ready = probe(portNo, 400);
+                if (!ready) {
+                    try {
+                        Thread.sleep(300);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+            }
+            if (!ready) {
+                System.out.println("  第 " + attempt + " 次注入没生效（端口 " + portNo + " 没起来），重试...");
+            }
+        }
+
+        if (!ready) {
+            System.out.println("注入没生效：agentmain 没跑起来。");
+            System.out.println("  - 目标进程是不是已经被注入过又把端口关了？先 /status 看看");
+            System.out.println("  - 端口 " + portNo + " 被别的程序占了？换 --port 8792");
+            System.out.println("  - 看目标进程的控制台/日志里的 [mcsi] 行");
             return;
         }
-        System.out.println("注入完成。");
-        System.out.println("  状态: http://127.0.0.1:" + port + "/status");
-        System.out.println("  扩展: http://127.0.0.1:" + port + "/extension.js");
-        System.out.println("  工程: http://127.0.0.1:" + port + "/project/ScratchMC.sb3");
+
+        System.out.println("注入完成，HTTP 已就绪。");
+        System.out.println("  状态: http://127.0.0.1:" + portNo + "/status");
+        System.out.println("  扩展: http://127.0.0.1:" + portNo + "/extension.js");
+        System.out.println("  工程: http://127.0.0.1:" + portNo + "/project/ScratchMC.scb3".replace(".scb3", ".sb3"));
+        System.out.println();
+        System.out.println("  用浏览器打开 /extension.js 应该看到 JS 源码；");
+        System.out.println("  只要这里返回的是 JSON 或连不上，TurboWarp 就会报 Error in sandboxed script。");
+    }
+
+    /** 直接打一次 /ping，确认注入端真的在听。 */
+    private static boolean probe(int port, int timeoutMs) {
+        java.net.Socket socket = new java.net.Socket();
+        try {
+            socket.connect(new java.net.InetSocketAddress("127.0.0.1", port), timeoutMs);
+            socket.setSoTimeout(timeoutMs);
+            java.io.OutputStream out = socket.getOutputStream();
+            out.write(("GET /ping HTTP/1.1\r\nHost: 127.0.0.1:" + port + "\r\nConnection: close\r\n\r\n")
+                    .getBytes("UTF-8"));
+            out.flush();
+            byte[] buf = new byte[1024];
+            int n = socket.getInputStream().read(buf);
+            return n > 0 && new String(buf, 0, n, "UTF-8").contains("200");
+        } catch (Throwable t) {
+            return false;
+        } finally {
+            try {
+                socket.close();
+            } catch (Throwable ignored) {
+                // ignore
+            }
+        }
     }
 
     private static void list() {

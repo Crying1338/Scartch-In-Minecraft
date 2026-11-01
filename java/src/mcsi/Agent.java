@@ -45,8 +45,11 @@ public final class Agent {
         host = a.containsKey("host") ? a.get("host") : "127.0.0.1";
         port = (int) Json.lng(a.get("port"), 8766);
         String token = a.containsKey("token") ? a.get("token") : "";
+        // 游戏的控制台经常被启动器藏起来，默认再写一份日志到临时目录
         if (a.containsKey("log")) {
             Log.toFile(a.get("log"));
+        } else {
+            Log.toFile(System.getProperty("java.io.tmpdir") + java.io.File.separator + "mcsi-agent.log");
         }
 
         Log.info("==================== " + NAME + " v" + VERSION + " 注入成功 ====================");
