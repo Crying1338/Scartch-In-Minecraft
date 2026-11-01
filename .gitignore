@@ -1,0 +1,13 @@
+# build output
+build/
+java/build/
+loader/build/
+*.class
+*.jar
+
+# bundled runtime (147 MB, download it yourself)
+tools/turbowarp/*.exe
+
+# os junk
+Thumbs.db
+.DS_Store
